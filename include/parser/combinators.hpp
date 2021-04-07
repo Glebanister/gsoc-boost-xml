@@ -264,7 +264,10 @@ class concat_parser : public inner_parser_container_
             return get_error(result);
         std::stringstream ss;
         for (auto &&sn : ast::nodes(get_ast(result)))
+        {
+            if (!sn) continue;
             ss << sn->get_name();
+        }
         return ast::make_node(ss.str());
     }
 };
@@ -341,7 +344,7 @@ inline parser_ptr m_alt(const parser_ptr &left, const parser_ptr &right)
 
 inline parser_ptr m_eof(const parser_ptr &p) { return m_seq(p, make_parser<eof_parser>()); }
 
-inline parser_ptr m_line(const parser_ptr &p) { return m_seq(p, m_char('\n')); }
+inline parser_ptr m_line(const parser_ptr &p) { return m_seq(p, m_ignore(m_char('\n'))); }
 
 
 } // namespace aliases

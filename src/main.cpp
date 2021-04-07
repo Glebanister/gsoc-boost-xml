@@ -2,7 +2,12 @@
 
 #include "csv/csv_parser.hpp"
 
-int main()
+int main(int argc, const char **argv)
 {
-    csv::safe_parse_csv("/home/gleb/Documents/projects/gsoc-boost-xml/input.txt", std::cout);
+    if (argc < 2)
+    {
+        std::cout << "Specify path to csv file as first argument" << std::endl;
+        return 0;
+    }
+    std::cout << csv::import_csv(argv[1]) << std::endl;
 }

@@ -19,9 +19,9 @@ parser::parser_ptr csv_parser()
     parser_ptr comma = m_ignore(m_char(','));
     parser_ptr quote = m_ignore(m_char('"'));
 
-    parser_ptr string_literal = m_erase(m_seq(quote,
-                                              m_concat(m_any(m_not_char('"'))),
-                                              quote));
+    parser_ptr string_literal = m_erase(m_concat(m_seq(quote,
+                                                       m_concat(m_any(m_not_char('"'))),
+                                                       quote)));
     parser_ptr non_string_literal = m_concat(m_any(m_not_charset(',', '"', '\n')));
     parser_ptr cell = m_alt(string_literal, non_string_literal);
     parser_ptr row = m_line(m_separator(cell, comma));
@@ -31,7 +31,7 @@ parser::parser_ptr csv_parser()
     return csv;
 }
 
-void safe_parse_csv(const std::string &filename, std::ostream &os)
+csv_table import_csv(const std::string &filename)
 {
     using namespace parser;
 
@@ -40,14 +40,12 @@ void safe_parse_csv(const std::string &filename, std::ostream &os)
 
     auto result = csv_parser()->parse(s);
 
-    if (::parser::no_error(result))
+    if (!::parser::no_error(result))
     {
-        os << ::parser::get_ast(result);
+        throw ::parser::get_error(result);
     }
-    else
-    {
-        os << ::parser::get_error(result).what() << std::endl;
-    }
+
+    return csv_table(::parser::get_ast(result));
 }
 } // namespace csv
 
