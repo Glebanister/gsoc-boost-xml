@@ -25,12 +25,12 @@ class try_parser : public inner_parser_container_
     maybe_error parse(scope &sc) override
     {
         position_rollback rollback(sc);
-        if (auto err = inner_->parse(sc); !no_error(err))
-        {
-            return err;
-        }
+        auto result = inner_->parse(sc);
+        if (!no_error(result))
+            return get_error(result);
+
         rollback.cancel();
-        return std::nullopt;
+        return get_ast(result);
     }
 };
 
@@ -38,18 +38,20 @@ template<std::predicate<char> PredicateT>
 class predicate_parser : public parser
 {
   public:
-    explicit predicate_parser(PredicateT predicate, const std::string &name)
-            : predicate_(std::move(predicate)), name_(name) {}
+    explicit predicate_parser(PredicateT predicate, std::string name)
+            : predicate_(std::move(predicate)), name_(std::move(name)) {}
 
     maybe_error parse(scope &sc) override
     {
         if (!sc.has_next())
             return sc.raise_eof();
 
-        if (!predicate_(sc.next_char()))
+        char c = sc.next_char();
+
+        if (!predicate_(c))
             return sc.raise_expected(name_);
 
-        return std::nullopt;
+        return ast::make_node(std::string{c});
     }
 
   private:
@@ -65,7 +67,7 @@ class eof_parser : public parser
         if (sc.has_next())
             return sc.raise_expected("EOF");
 
-        return std::nullopt;
+        return ast::make_node("EOF");
     }
 };
 
@@ -116,17 +118,25 @@ class at_least_parser : public inner_parser_container_
 
     maybe_error parse(scope &sc) override
     {
+        ast::node_ptr node = ast::make_node("At least " + std::to_string(at_least_));
         for (std::size_t i = 0; i < at_least_; ++i)
         {
-            if (auto err = inner_->parse(sc); !no_error(err))
-            {
-                return err;
-            }
+            auto result = inner_->parse(sc);
+            if (!no_error(result))
+                return get_error(result);
+
+            node->append_child(get_ast(result));
         }
-        while (no_error(try_inner_->parse(sc)))
+        bool success = true;
+        while (success)
         {
+            auto result = try_inner_->parse(sc);
+            if (!no_error(result))
+                success = false;
+            else
+                node->append_child(get_ast(result));
         }
-        return std::nullopt;
+        return node;
     }
 
   private:
@@ -151,18 +161,54 @@ class seq_parser : public parser
 
     maybe_error parse(scope &sc) override
     {
+        ast::node_ptr node = ast::make_node("Sequence");
         for (auto &&item : sequence_)
         {
-            if (auto err = item->parse(sc); !no_error(err))
+            auto result = item->parse(sc);
+            if (!no_error(result))
             {
-                return err;
+                return get_error(result);
             }
+            node->append_child(get_ast(result));
         }
-        return std::nullopt;
+        return node;
     }
 
   private:
     std::vector<parser_ptr> sequence_;
+};
+
+class separator_parser : public parser
+{
+  public:
+    explicit separator_parser(parser_ptr value, parser_ptr sep)
+            : value_(std::move(value)), sep_(std::move(sep))
+    {
+    }
+
+    maybe_error parse(scope &sc) override
+    {
+        ast::node_ptr node = ast::make_node("Separator");
+        auto result = value_->parse(sc);
+        if (!no_error(result))
+            return get_error(result);
+        node->append_child(get_ast(result));
+        while (true)
+        {
+            position_rollback rollback(sc);
+            auto sep_result = sep_->parse(sc);
+            if (!no_error(sep_result))
+                return node;
+            auto value_result = value_->parse(sc);
+            if (!no_error(value_result))
+                return node;
+            node->append_child(get_ast(value_result));
+            rollback.cancel();
+        }
+    }
+
+  private:
+    parser_ptr value_, sep_;
 };
 
 class alt_parser : public parser
@@ -176,14 +222,15 @@ class alt_parser : public parser
 
     maybe_error parse(scope &sc) override
     {
-        if (auto err = left_->parse(sc); !no_error(err))
-        {
-            if (auto r_err = right_->parse(sc); !no_error(err))
-            {
-                return r_err;
-            }
-        }
-        return std::nullopt;
+        auto left_res = left_->parse(sc);
+        if (no_error(left_res))
+            return get_ast(left_res);
+
+        auto right_res = right_->parse(sc);
+        if (no_error(right_res))
+            return get_ast(right_res);
+
+        return get_error(left_res);
     }
 
   private:
@@ -191,7 +238,60 @@ class alt_parser : public parser
     parser_ptr right_;
 };
 
+class ignore_parser : public inner_parser_container_
+{
+  public:
+    using inner_parser_container_::inner_parser_container_;
+
+    maybe_error parse(scope &sc) override
+    {
+        auto result = inner_->parse(sc);
+        if (!no_error(result))
+            return get_error(result);
+        return nullptr;
+    }
+};
+
+class concat_parser : public inner_parser_container_
+{
+  public:
+    using inner_parser_container_::inner_parser_container_;
+
+    maybe_error parse(scope &sc) override
+    {
+        auto result = inner_->parse(sc);
+        if (!no_error(result))
+            return get_error(result);
+        std::stringstream ss;
+        for (auto &&sn : ast::nodes(get_ast(result)))
+            ss << sn->get_name();
+        return ast::make_node(ss.str());
+    }
+};
+
+class erase_parser : public inner_parser_container_
+{
+  public:
+    using inner_parser_container_::inner_parser_container_;
+
+    maybe_error parse(scope &sc) override
+    {
+        auto result = inner_->parse(sc);
+        if (!no_error(result))
+            return get_error(result);
+        auto node = get_ast(result);
+        node->disable();
+        return node;
+    }
+};
+
 namespace aliases {
+
+inline parser_ptr m_concat(const parser_ptr &p) { return make_parser<concat_parser>(p); }
+
+inline parser_ptr m_ignore(const parser_ptr &p) { return make_parser<ignore_parser>(p); }
+
+inline parser_ptr m_erase(const parser_ptr &p) { return make_parser<erase_parser>(p); }
 
 inline parser_ptr m_try(const parser_ptr &p) { return make_parser<try_parser>(p); }
 
@@ -231,7 +331,7 @@ inline auto m_seq(Args &&... args) -> std::enable_if_t<(std::is_convertible_v<Ar
 
 inline parser_ptr m_separator(const parser_ptr &value, const parser_ptr &sep)
 {
-    return m_seq(value, m_any(m_seq(sep, value)));
+    return make_parser<separator_parser>(value, sep);
 }
 
 inline parser_ptr m_alt(const parser_ptr &left, const parser_ptr &right)
@@ -240,6 +340,9 @@ inline parser_ptr m_alt(const parser_ptr &left, const parser_ptr &right)
 }
 
 inline parser_ptr m_eof(const parser_ptr &p) { return m_seq(p, make_parser<eof_parser>()); }
+
+inline parser_ptr m_line(const parser_ptr &p) { return m_seq(p, m_char('\n')); }
+
 
 } // namespace aliases
 } // namespace parser

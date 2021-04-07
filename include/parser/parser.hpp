@@ -8,21 +8,22 @@
 
 #include "parser/scope.hpp"
 #include "parser/collectors.hpp"
+#include "ast/ast.hpp"
 
 namespace parser {
 
-template<typename ResT>
-using maybe_error = std::variant<exception::parser_error, ResT>;
+using maybe_error = std::variant<exception::parser_error, ast::node_ptr>;
 
-template<typename ResT>
-inline bool no_error(const maybe_error<ResT> &ret) { return ret.index() == 1; }
+inline bool no_error(const maybe_error &ret) { return ret.index() == 1; }
 
-inline void assert_no_error(const maybe_error &error)
+inline exception::parser_error get_error(const maybe_error &result)
 {
-    if (error.has_value())
-    {
-        throw error.value();
-    }
+    return std::get<exception::parser_error>(result);
+}
+
+inline ast::node_ptr get_ast(const maybe_error &result)
+{
+    return std::get<ast::node_ptr>(result);
 }
 
 class parser
@@ -33,7 +34,7 @@ class parser
 
 using parser_ptr = std::shared_ptr<parser>;
 
-template<typename T, typename... Args>
+template <typename T, typename... Args>
 parser_ptr make_parser(Args &&...args)
 {
     return std::static_pointer_cast<parser>(

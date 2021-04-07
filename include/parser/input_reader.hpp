@@ -82,8 +82,7 @@ class full_file_reader : public input_reader
         {
             throw input_reading_error(file_path);
         }
-        input >> content_;
-        std::cout << content_ << std::endl;
+        content_ = std::string((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
     }
 
     bool can_read(const position &pos) override
