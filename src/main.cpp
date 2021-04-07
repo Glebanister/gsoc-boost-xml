@@ -9,5 +9,14 @@ int main(int argc, const char **argv)
         std::cout << "Specify path to csv file as first argument" << std::endl;
         return 0;
     }
-    std::cout << csv::import_csv(argv[1]) << std::endl;
+    try
+    {
+        std::cout << csv::import_csv(argv[1]) << std::endl;
+    } catch (const std::exception &e)
+    {
+        std::cerr << e.what() << std::endl;
+    } catch (...)
+    {
+        std::cerr << "Unknown error occurred" << std::endl;
+    }
 }
