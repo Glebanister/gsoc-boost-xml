@@ -4,13 +4,15 @@ Test assignment for google summer of code for Boost.XML.
 
 ## Installation
 
-First, make sure `cmake` version is `17.^` and `clang` has `C++20` support on your
-machine. Then execute following instructions
+First, make sure `cmake` version is `17.^` and `clang-10` has `C++20` support on your
+machine. Otherwise, replace compiler path in the section below with your own.
+Then execute following instructions
 
 ```bash
 git clone https://github.com/Glebanister/gsoc-boost-xml
 mkdir build && cd build
-cmake .. && cmake --build
+cmake .. -D CMAKE_CXX_COMPILER=clang-10
+cmake --build
 ```
 
 ## Usage
